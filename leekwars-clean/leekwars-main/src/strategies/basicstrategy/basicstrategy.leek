@@ -1,0 +1,465 @@
+//include("movecell");
+//include("basicstrategytools");
+//include("relativecell");
+
+/****************************************************************************
+ * BasicStrategy
+ ****************************************************************************/
+class BasicStrategy {
+
+  static Me me;
+  static Enemy enemy;
+  static integer myId;
+  static integer enemyId;
+  static Round currentRound;
+  static MeRound meRound;
+  static EnemyRound enemyRound;
+  static integer myCurrentCellId;
+  static integer enemyCurrentCellId;
+
+  static integer myMaxMP;
+  static integer enemyMaxMP;
+
+  static boolean lowLife = false;
+  static boolean badLifeRatio = false;
+  static integer runCompare; // 0 = same MP, 0 he has less MP
+  static string myState = "center";
+  static string myStrategy = STRATEGY_UNKNOWN;
+
+  static string STRATEGY_UNKNOWN = "unknown";
+  static string STRATEGY_HIDDEN = "hidden";
+  static string STRATEGY_LONG_RANGE = "long_range";
+  static string STRATEGY_SHORT_RANGE = "short_range";
+  static string STRATEGY_MELEE = "melee"; // not used
+
+
+  /**
+   * isValide
+   *
+   * refuse les match avec AOE, en groupe, ou avec bulb
+   **/
+  static boolean isValide() {
+    if(count(Board.enemies) > 1) return false;
+    enemy = Board.enemies[0];
+    me = Board.me;
+    myId = me.id;
+    enemyId = enemy.id;
+    return isEmpty(enemy.categories[CATEGORY_BULB]!);
+  }
+
+  /**s
+   * apply
+   **/
+  boolean apply() {
+
+    currentRound = Board.currentRound;
+    meRound = currentRound.meRound;
+    enemyRound = currentRound.enemiesRound[0];
+    myCurrentCellId = meRound.currentCellId;
+    enemyCurrentCellId = enemyRound.currentCellId;
+
+    GameDebug.addOperation(BASIC_STRATEGY_DEBUG,"init board");
+    GameDebug.add(BASIC_STRATEGY_DEBUG,Board.maxAOERange,"maxAOERange");
+
+    if(gFirstRound) init();
+    else update();
+
+    GameDebug.add(BASIC_STRATEGY_DEBUG,myStrategy,"myStrategy");
+    GameDebug.add(BASIC_STRATEGY_DEBUG,enemyRound.state,"enemyState");
+    GameDebug.add(BASIC_STRATEGY_DEBUG,meRound.state,"myState");
+
+    //
+    // phase 1 : on determine les mouvements possibles de mon poireau et du poireau adverse
+    //
+    /*
+    var MPToolList = MPConditions(meRound);
+    myMaxMP = 0;
+    for(Simulation sim in MPToolList) myMaxMP = max(myMaxMP, sim.roundObj.leeksRound[myId]!.minMP);
+    var myMoveCells = BasicStrategyTools.route(meRound, "minMP", MPToolList, myMaxMP);
+    MPToolList = MPConditions(enemyRound);
+    enemyMaxMP = 0;
+    for(Simulation sim in MPToolList) enemyMaxMP = max(enemyMaxMP, sim.roundObj.leeksRound[enemyId]!.maxMP);
+    var enemyMoveCells = BasicStrategyTools.route(enemyRound, "maxMP", MPToolList, enemyMaxMP);
+    runCompare = myMaxMP - enemyMaxMP;
+    if(BASIC_STRATEGY_DEBUG) {
+      GameDebug.add(true, "avalaible simulations:");
+      for(integer index : Simulation sim in myMoveCells[myCurrentCellId]!.moveSim) {
+        GameDebug.add(true, sim.actions,"sim #"+ index +"(MP]!.minMP+")");
+	  }
+	   GameDebug.add(true, "avalaible simulations enemy:");
+      for(integer index : Simulation sim in enemyMoveCells[enemyCurrentCellId]!.moveSim) {
+        GameDebug.add(true, sim.actions,"sim #"+ index +"(MP]!.maxMP+")");
+	  }
+    }
+
+    //
+    // phase 2 : on determine les tire que je peux faire
+    // phase 2.1: on determine pour chaque arme les relativeCell possible
+    //
+    var tools = [];
+    for(ToolRound toolR in meRound.categoryDamage) push(tools,toolR.tool);
+    var enemyRelativeCells = enemyRound.currentCell.cell.getRelativeCells(tools);
+
+    if(BASIC_STRATEGY_DEBUG) {
+      for(RelativeCell mc in enemyRelativeCells) {
+        mark(mc.id,COLOR_PINK,1);
+        markText(mc.id,mapSize(mc.toolsList),0,1);
+      }
+	  for(MoveCell mc in enemyMoveCells) {
+	    mark(mc.id,COLOR_RED,1);
+        markText(mc.id,mapSize(mc.moveSim),0,1);
+	  }
+    }
+
+    //
+    // phase 2.2: pour chaque movecell on regarde si on peut atteindre une relativecell
+    //
+    for(MoveCell myMoveCell in myMoveCells) myMoveCell.canIUseWeapons(enemyRelativeCells);
+
+    //
+    // phase 3: on determine les tires que l ennemi pourra faire
+    //
+    tools = [];
+    for(ToolRound toolR in enemyRound.categoryDamage) push(tools,toolR.tool);
+    for(MoveCell myMoveCell in myMoveCells) myMoveCell.canEnemyUseWeapons(enemyRound, enemyMoveCells, tools);
+
+    //
+    // phase 4: on decompose en different cas (couleur) et on calcul les degat
+    //
+    var myMoveCellsNeutral = [:]; // il me touche pas je le touche pas
+    var myMoveCellsBad = [:]; // il me touche, je le touche pas
+    var myMoveCellsGood = [:]; // je le touche, il me touche pas
+    var myMoveCellsAnnihilation = [:]; // on se touche tous les 2
+    BasicStrategyTools.colorize(myMoveCells, myMoveCellsNeutral, myMoveCellsBad, myMoveCellsGood,
+								myMoveCellsAnnihilation, enemyId);
+
+    if(BASIC_STRATEGY_DEBUG) {
+      for(MoveCell mc in myMoveCellsNeutral) {
+        mark(mc.id,COLOR_BLUE,1);
+        markText(mc.id,mapSize(mc.moveSim));
+      }
+      for(MoveCell mc in myMoveCellsBad) {
+        mark(mc.id,COLOR_RED,1);
+        markText(mc.id,mapSize(mc.moveSim));
+      }
+      for(MoveCell mc in myMoveCellsGood) {
+        mark(mc.id,COLOR_GREEN,1);
+        markText(mc.id,mapSize(mc.moveSim));
+      }
+      for(MoveCell mc in myMoveCellsAnnihilation) {
+        mark(mc.id,COLOR_YELLOW,1);
+        markText(mc.id,mapSize(mc.moveSim));
+      }
+    }
+
+    // ===> a ce point j ai des movecell pour chaque case vers laquelle je peux aller, contenant)
+    // - la liste des relativecell que je peux toucher avec, les armes utilisable sur cette relativeCell,
+    //   le poireau que je touche (pas de gestion multi target), et l AOE
+    // - la liste des tools enemy qui peuvent me toucher sur cette moveCell et l AOE correspondant
+    // ===> les moveCells sont trier par couleur
+
+    //
+    // phase 5: je repartie vers la bonne strategie
+    //
+    if(mapSize(myMoveCellsGood) > 0) return good(myMoveCellsGood, myMoveCellsAnnihilation);
+    if(mapSize(myMoveCellsNeutral) > 0) return neutral(myMoveCellsNeutral, myMoveCellsAnnihilation, myMoveCellsBad);
+    if(mapSize(myMoveCellsAnnihilation) > 0) return annihilation(myMoveCellsAnnihilation);
+    return bad(myMoveCellsBad);
+    */
+  }
+
+// ----------------------------------------------- strategy ----------------------------------------------------
+
+  /**
+   * heal
+   * TODO: remplacer les constantes
+   **/
+   /*
+  static void heal() {
+    if(meRound.minTotalLife - meRound.maxLife > 46) { // 46 = max CHIP_CURE
+      useChip(CHIP_STRETCHING) // 3
+      useChip(CHIP_CURE); // 4
+      meRound.update();
+    }
+    if(meRound.minTotalLife - meRound.maxLife > 28) { // 28 = max CHIP_BANDAGE
+      useChip(CHIP_STRETCHING) // 3
+      useChip(CHIP_BANDAGE); // 2
+      meRound.update();
+    }
+  }
+
+  /**
+   * protect
+   **/
+   /*
+  static void protect() {
+    useChip(CHIP_WALL) // 3
+    useChip(CHIP_HELMET); // 3
+  }
+
+  /**
+   * conclude
+   * TODO: remplacer les constantes
+   **/
+   /*
+  static void conclude() {
+    if(myStrategy == STRATEGY_LONG_RANGE) {
+      useChip(CHIP_STRETCHING) // 3
+      useChip(CHIP_PROTEIN); // 3
+      useChip(CHIP_MOTIVATION) // 4
+      protect();
+    } else if(myStrategy == STRATEGY_SHORT_RANGE) {
+      useChip(CHIP_STRETCHING) // 3
+      useChip(CHIP_MOTIVATION) // 4
+      protect(); // 3
+      useChip(CHIP_PROTEIN); // 3
+    } else if(myStrategy == STRATEGY_HIDDEN) {
+      useChip(CHIP_STRETCHING) // 3
+      useChip(CHIP_LEATHER_BOOTS) // 3
+      protect(); // 3
+    } else { // STRATEGY_MELEE
+    }
+  }
+
+ /**
+  * init
+  * choix de l arme a degainer au depart et de la strategie global
+  * 1 - WEAPON_SHOTGUN
+  * 2 - WEAPON_NEUTRINO
+  * 3 - WEAPON_MAGNUM
+  * 4 - WEAPON_MACHINE_GUN
+  * 5 - WEAPON_PISTOL
+  **/
+  static void init() {
+    if(me.maxAOERange > enemy.maxAOERange) myStrategy = STRATEGY_LONG_RANGE;
+    else if(!me.needLos && enemy.needLos) myStrategy = STRATEGY_HIDDEN;
+    else myStrategy = STRATEGY_SHORT_RANGE;
+    var weapons = me.tools;
+    if(mapContainsKey(weapons, WEAPON_SHOTGUN)) meRound.setWeaponUpdate(WEAPON_SHOTGUN);
+    else if(mapContainsKey(weapons, WEAPON_NEUTRINO)) meRound.setWeaponUpdate(WEAPON_NEUTRINO);
+    else if(mapContainsKey(weapons, WEAPON_MAGNUM)) meRound.setWeaponUpdate(WEAPON_MAGNUM);
+    else if(mapContainsKey(weapons, WEAPON_MACHINE_GUN)) meRound.setWeaponUpdate(WEAPON_MACHINE_GUN);
+    else if(mapContainsKey(weapons, WEAPON_PISTOL)) meRound.setWeaponUpdate(WEAPON_PISTOL);
+    else {
+      if(count(me.weapons) > 0) {
+        meRound.setWeaponUpdate(me.weapons[0].id);
+        debugC("BasicStrategy=>neutral=>aucune arme connu", COLOR_RED);
+        debugC(Board.me.tools, COLOR_RED);
+      } // else j ai pas d arme
+    }
+    GameDebug.add(BASIC_STRATEGY_DEBUG,me.maxAOERange+"/"+enemy.maxAOERange,"my/him AOERange");
+    GameDebug.add(BASIC_STRATEGY_DEBUG,enemy.tools,"enemy tools");
+  }
+
+  /**
+   * update
+   **/
+  void update() {
+    badLifeRatio = ((meRound.maxLife/meRound.maxTotalLife) < (enemyRound.maxLife/enemyRound.maxTotalLife));
+	lowLife = ((meRound.maxLife/meRound.maxTotalLife) < 0.5);
+	(lowLife && badLifeRatio) and (meRound.state = LeekRound.STATE_ESCAPE);
+  }
+
+  /**
+   * good
+   **/
+  /*
+  static boolean good(var myGoods, var myAnnihilations) {
+	if(BasicStrategyTools.instaKill(myAnnihilations)) return true;
+	boolean farestEscape = (myState == STATE_ESCAPE || myStrategy == STRATEGY_LONG_RANGE ||
+							myStrategy == STRATEGY_HIDDEN);
+	Object list = MoveCell.selectBestAttackEscape(myGoods, enemyCurrentCellId, farestEscape,true);
+	Object finalMc = (list.result as Array)[0] as Object;
+	(finalMc.moveCell as MoveCell).execute(finalMc.simIndex as integer,((finalMc.escapes as Array)[0] as MoveCell).id)
+	conclude();
+	heal();
+    myState = STATE_ATTACK;
+    return true;
+  }
+	*/
+  /**
+   * annihilation
+   **/
+   /*
+  static boolean annihilation(var myAnnihilations) {
+    boolean farestEscape = (myState == STATE_ESCAPE || myStrategy == STRATEGY_LONG_RANGE ||
+							myStrategy == STRATEGY_HIDDEN);
+	Object list = MoveCell.selectBestAttackEscape(myAnnihilations, enemyCurrentCellId, farestEscape,false);
+	Object finalMc = (list.result as Array)[0] as Object;
+	(finalMc.moveCell as MoveCell).execute(finalMc.simIndex as integer,((finalMc.escapes as Array)[0] as MoveCell).id)
+	conclude();
+	heal();
+    myState = STATE_ATTACK;
+    return true;
+  }
+*/
+  /**
+   * neutral
+   **/
+   /*
+  static boolean neutral(var myMoveCellsNeutral, var myMoveCellsAnnihilation,
+                         var myMoveCellsBad) {
+    if(BasicStrategyTools.instaKill(myMoveCellsAnnihilation)) return true;
+    if(myState == STATE_CENTER) {
+      integer centerId = meRound.getRelativeCenter();
+      integer oldCellId = BasicStrategy.myCurrentCellId;
+      BasicStrategyTools.moveToCellPassBy(centerId, myMoveCellsNeutral,true);
+	  BasicStrategy.myCurrentCellId = meRound.currentCellId;
+      if(BasicStrategy.myCurrentCellId == centerId || oldCellId == BasicStrategy.myCurrentCellId)
+	    myState = STATE_APPROACH; // je suis arrive au centre ou je ne peux pas avancer plus
+    } else if(myState == STATE_ESCAPE) {
+      BasicStrategyTools.moveAwayFromCellPassBy(BasicStrategy.enemyCurrentCellId, myMoveCellsNeutral, true);
+	  BasicStrategy.myCurrentCellId = meRound.currentCellId;
+      heal();
+	  conclude();
+      myState = STATE_ATTACK;
+    } else if(myState == STATE_APPROACH) {
+      integer oldCellId = BasicStrategy.myCurrentCellId;
+      BasicStrategyTools.moveToCellPassBy(BasicStrategy.enemyCurrentCellId, myMoveCellsNeutral, true);
+      if(oldCellId == myCurrentCellId) {
+        myState = STATE_ATTACK; // je ne peux pas avancer plus
+		conclude();
+      }
+    } else {  // STATE_ATTACK
+      if(mapSize(myMoveCellsAnnihilation) > 0) {
+		integer bestScore = MoveCell.BAD_SCORE;
+        var bestMc = [];
+        for(MoveCell mc in myMoveCellsAnnihilation) {
+	      for(integer index  score in mc.attackScores) {
+	        if(score == bestScore) {
+		      push(bestMc, {moveCell:mc, index);
+		    } else if(score > bestScore) {
+              bestScore = score;
+		      bestMc = [{moveCell:mc, index];
+		    }
+	      }
+	    }
+		debugC("BasicStrategy=>good=>recuperer la meilleure des meilleur annihilation avec la meilleure escape",COLOR_RED);
+		MoveCell finale = bestMc[0].moveCell as MoveCell;
+	    finale.moveSim[bestMc[0].index as integer]!.execute();
+		meRound.moveToCell(finale.id);
+        finale.attackSim[bestMc[0].index as integer]!.execute();
+		// TODO: je dois bouger pour aller sur la cell qui a la meilleure defence
+      } else {
+		  // TODO: something
+	  }
+	}
+
+    return true;
+  }
+    */
+  /**
+   * bad
+   **/
+   /*
+  static boolean bad(var moveCellsList) {
+    boolean farestEscape = (myState == STATE_ESCAPE || myStrategy == STRATEGY_LONG_RANGE ||
+							myStrategy == STRATEGY_HIDDEN);
+	Object list = MoveCell.selectBestAttackEscape(moveCellsList, enemyCurrentCellId, farestEscape,false);
+	Object finalMc = (list.result as Array)[0] as Object;
+	(finalMc.moveCell as MoveCell).execute(finalMc.simIndex as integer,((finalMc.escapes as Array)[0] as MoveCell).id)
+	protect();
+	heal();
+	conclude();
+    return true;
+  }
+    */
+  /**
+   * condition d utilisation des chips lors de la phase de prediction des mouvements
+   * une simuation par combinaison de chip
+   * 0- pas de chip
+   * 1- CHIP_LEATHER_BOOTS
+   * TODO: chip de saut
+   **/
+   /*
+  static var MPConditions(LeekRound owner) {
+    Simulation sim = new Simulation(owner, 0);
+    var ret = [sim]; // cas sans chip
+    if(mapContainsKey(owner.toolsRound, CHIP_LEATHER_BOOTS))
+      BasicStrategyTools.addSim(ret, sim, owner.currentCellId, CHIP_LEATHER_BOOTS); // CHIP_LEATHER_BOOTS
+    return ret;
+  }
+
+  /**
+   * computeAttack
+   * 1- WEAPON_SHOTGUN
+   * 2- WEAPON_NEUTRINO
+   * 3- CHIP_ROCK
+   * 4- CHIP_FLASH
+   * 5- WEAPON_MAGNUM
+   * 5.1- WEAPON_MACHINE_GUN
+   * 6- CHIP_ICE
+   * 6.1- WEAPON_PISTOL
+   * 7- CHIP_PEBBLE
+   * 8- CHIP_SPARK
+   * 9- CHIP_SHOCK
+   * @return {score, simulation, RelativeCell rel, integer shooterCurrentCell) {
+	Simulation sim = new Simulation(simu, simu.id);
+	var ret = [sim]; // cas sans chip
+	if(mapContainsKey(simu.owner.toolsRound, CHIP_PROTEIN))
+      BasicStrategyTools.addSim(ret, sim, shooterCurrentCell, CHIP_PROTEIN); // CHIP_PROTEIN
+    var toolsList = rel.toolsList;
+    integer targetCell = rel.id;
+	LeekRound shooter = sim.owner;
+    integer minTP = shooter.minTP;
+    integer|null currentWeapon = shooter.weaponId;
+    var toolsInfo = shooter.leek.tools;
+    EffectResult result = new EffectResult();
+    boolean keepWeapon = (shooter.weaponId != null) && mapContainsKey(toolsList, shooter.weaponId);
+    minTP = BasicStrategyTools.addTool(WEAPON_SHOTGUN, toolsInfo, toolsList, targetCell, minTP, result, sim,
+                                         shooter, keepWeapon);
+    minTP = BasicStrategyTools.addTool(WEAPON_NEUTRINO, toolsInfo, toolsList, targetCell, minTP, result, sim,
+                                         shooter, keepWeapon);
+    minTP = BasicStrategyTools.addTool(CHIP_ROCK, toolsInfo, toolsList, targetCell, minTP, result, sim, shooter);
+    minTP = BasicStrategyTools.addTool(CHIP_FLASH, toolsInfo, toolsList, targetCell, minTP, result, sim, shooter);
+    minTP = BasicStrategyTools.addTool(WEAPON_MAGNUM, toolsInfo, toolsList, targetCell, minTP, result, sim,
+                                         shooter, keepWeapon);
+    minTP = BasicStrategyTools.addTool(WEAPON_MACHINE_GUN, toolsInfo, toolsList, targetCell, minTP, result,
+                                         sim, shooter, keepWeapon);
+    minTP = BasicStrategyTools.addTool(CHIP_ICE, toolsInfo, toolsList, targetCell, minTP, result, sim, shooter);
+    minTP = BasicStrategyTools.addTool(WEAPON_PISTOL, toolsInfo, toolsList, targetCell, minTP, result, sim,
+                                         shooter, keepWeapon);
+    minTP = BasicStrategyTools.addTool(CHIP_PEBBLE, toolsInfo, toolsList, targetCell, minTP, result, sim, shooter);
+    minTP = BasicStrategyTools.addTool(CHIP_SPARK, toolsInfo, toolsList, targetCell, minTP, result, sim, shooter);
+    minTP = BasicStrategyTools.addTool(CHIP_SHOCK, toolsInfo, toolsList, targetCell, minTP, result, sim, shooter);
+	if(sim.roundObj.leeksRound[enemyId]!.maxLife <= 0) return {score:MoveCell.INSTA_KILL,simulation,simulation, integer shooterId) {
+	for(real AOE = 1.0; AOE > 0.0; AOE = AOE - AOE_DEC_LINE_FACTOR) {
+	  if(!mapContainsKey(enemyTools, AOE)) continue;
+	  var AOEs = [AOE];
+	  var targets = [myId];
+	  Round roundObj = new Round(currentRound);
+	  LeekRound shooter = roundObj.leeksRound[shooterId]!;
+	  var toolsList = enemyTools[AOE]!;
+	  integer minTP = shooter.maxTP;
+	  integer|null currentWeapon = shooter.weaponId;
+	  var toolsInfo = shooter.leek.tools;
+	  EffectResult result = new EffectResult();
+	  boolean keepWeapon = (shooter.weaponId != null) && mapContainsKey(toolsList, shooter.weaponId);
+	  minTP = BasicStrategyTools.addEnemyTool(WEAPON_SHOTGUN, toolsInfo, toolsList, minTP, result, roundObj,
+                                              shooter, targets, AOEs, keepWeapon);
+      minTP = BasicStrategyTools.addEnemyTool(WEAPON_NEUTRINO, toolsInfo, toolsList, minTP, result, roundObj,
+                                            shooter, targets, AOEs, keepWeapon);
+      minTP = BasicStrategyTools.addEnemyTool(CHIP_ROCK, toolsInfo, toolsList, minTP, result, roundObj,
+											shooter, targets, AOEs);
+      minTP = BasicStrategyTools.addEnemyTool(CHIP_FLASH, toolsInfo, toolsList, minTP, result, roundObj,
+		  									shooter, targets, AOEs);
+      minTP = BasicStrategyTools.addEnemyTool(WEAPON_MAGNUM, toolsInfo, toolsList, minTP, result, roundObj,
+                                              shooter, targets, AOEs, keepWeapon);
+      minTP = BasicStrategyTools.addEnemyTool(WEAPON_MACHINE_GUN, toolsInfo, toolsList, minTP, result, roundObj,
+                                              shooter, targets, AOEs, keepWeapon);
+      minTP = BasicStrategyTools.addEnemyTool(CHIP_ICE, toolsInfo, toolsList, minTP, result, roundObj,
+		  						   			  shooter, targets, AOEs);
+      minTP = BasicStrategyTools.addEnemyTool(WEAPON_PISTOL, toolsInfo, toolsList, minTP, result, roundObj,
+                                              shooter, targets, AOEs, keepWeapon);
+      minTP = BasicStrategyTools.addEnemyTool(CHIP_PEBBLE, toolsInfo, toolsList, minTP, result, roundObj,
+		  									  shooter, targets, AOEs);
+      minTP = BasicStrategyTools.addEnemyTool(CHIP_SPARK, toolsInfo, toolsList, minTP, result, roundObj,
+		  									  shooter, targets, AOEs);
+      minTP = BasicStrategyTools.addEnemyTool(CHIP_SHOCK, toolsInfo, toolsList, minTP, result, roundObj,
+		  									  shooter, targets, AOEs);
+	  return result.midEffect;
+	}
+	return 0;
+  }
+  */
+}

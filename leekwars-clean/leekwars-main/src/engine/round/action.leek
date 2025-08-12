@@ -1,0 +1,117 @@
+/******************************************************************************
+ * Action (Abstract)
+ * action que doit realiser un leek en simulation en ou vrai
+ ******************************************************************************/
+class Action {
+
+  /**
+   * execute
+   **/
+  void execute() {
+  }
+
+}
+
+/******************************************************************************
+ * SetWeaponAction
+ ******************************************************************************/
+class SetWeaponAction {
+
+  private integer toolId;
+
+  /**
+   * constructor
+   **/
+  constructor(integer toolId) {
+    this.toolId = toolId;
+  }
+
+  /**
+   * execute
+   **/
+  void execute() {
+    setWeapon(toolId);
+  }
+
+  /**
+   * string
+   **/
+  string string(string space = "") {
+    return shortString();
+  }
+  string shortString(string space = "") {
+    return "SetWeaponAction: "+TOOL_NAME_TRANSLATOR[toolId]!;
+  }
+
+}
+
+/******************************************************************************
+ * MoveAction
+ ******************************************************************************/
+class MoveAction {
+
+  private integer cellId;
+
+  /**
+   * constructor
+   **/
+  constructor(integer cellId) {
+    this.cellId = cellId;
+  }
+
+  /**
+   * execute
+   **/
+  void execute() {
+    moveTowardCell(cellId);
+  }
+
+  /**
+   * string
+   **/
+  string string(string space = "") {
+    return shortString();
+  }
+  string shortString(string space = "") {
+    return "MoveAction: "+cellId;
+  }
+
+}
+
+/******************************************************************************
+ * ToolAction
+ ******************************************************************************/
+class ToolAction {
+
+  private integer toolId;
+  private integer targetCell;
+
+  /**
+   * constructor
+   **/
+  constructor(integer toolId, integer targetCell) {
+    this.toolId = toolId;
+    this.targetCell = targetCell;
+  }
+
+  /**
+   * execute
+   * Attention: ne fait pas l update du round
+   * on ne fait un update du round qu apres avoir executer toutes les actions
+   * pour economiser des operations
+   **/
+  void execute() {
+    Board.currentRound.meRound.toolsRound[toolId]!.useOnCell(targetCell);
+  }
+
+  /**
+   * string
+   **/
+  string string(string space = "") {
+    return shortString();
+  }
+  string shortString(string space = "") {
+    return "ToolAction: use "+TOOL_NAME_TRANSLATOR[toolId]!+" on "+targetCell;
+  }
+
+}

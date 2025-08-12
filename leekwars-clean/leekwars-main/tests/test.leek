@@ -1,0 +1,12 @@
+class test {
+
+}
+class toto {
+  constructor() {
+    debug("oui")
+  }
+}
+
+var a = [toto]
+
+Class t = a[0]

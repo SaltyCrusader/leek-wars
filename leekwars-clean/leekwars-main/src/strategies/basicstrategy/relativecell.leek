@@ -1,0 +1,23 @@
+/******************************************************************************
+ * RelativeCell
+ * toutes les relativeCell ne sont pas mise en cache seulement celle dont
+ * les armes peuvent vraiment l atteindre
+ ******************************************************************************/
+class RelativeCell {
+  real AOE;
+  integer targetCell; // cell where is the target leek
+  var toolsList;
+  var data = [:]; // permet de stocker des donner
+
+  /**
+   * constructors
+   * @param tools : Attention: le tableau n est pas copie
+   **/
+  constructor(integer id, real AOE, integer targetCell, var tools) {
+    this.id = id;
+    this.AOE = AOE;
+    this.targetCell = targetCell;
+    toolsList = tools;
+  }
+
+}
